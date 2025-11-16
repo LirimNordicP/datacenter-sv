@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+*.ipynb
+.vscode/
+.idea/
+.streamlit/
+data/
+data_parquet_cache/
