@@ -228,6 +228,30 @@ def get_latest_parquet_in_folder(folder: str, prefix: Optional[str]):
 
     return None, None
 
+@st.cache_data(show_spinner=False, ttl=24 * 60 * 60)
+def get_soc_year_to_path(folder: str, prefix: Optional[str]):
+    """
+    For the Socialstyrelsen folder, return a mapping {year: dropbox_path}
+    based on filenames like 'lakemedel_2024-12-05_2020.parquet'.
+    """
+    paths = list_parquet_files(folder)
+    year_to_path: Dict[int, str] = {}
+
+    for p in paths:
+        fname = os.path.basename(p)
+        if prefix and not fname.lower().startswith(prefix.lower()):
+            continue
+
+        # Expect suffix ..._YYYY.parquet
+        m = re.search(r"_(\d{4})\.parquet$", fname)
+        if not m:
+            continue
+
+        year = int(m.group(1))
+        year_to_path[year] = p
+
+    return year_to_path
+
 
 def find_overall_latest_for_source(source_key: str):
     """Latest date across all tables for front-page cards."""
@@ -394,17 +418,30 @@ def render_source_page(source_key: str):
         )
         label = tbl["label"]
         option_labels.append(f"{label} (latest: {date or 'none'})")
-        table_map[label] = (path, date, tbl["folder"])
+        table_map[label] = {
+            "parquet_path": path,
+            "date": date,
+            "folder": tbl["folder"],
+            "prefix": tbl.get("filename_prefix"),
+        }
+
 
     selected_label = st.selectbox("Choose table", option_labels)
     table_label = selected_label.split(" (")[0]
-    parquet_path, date_str, _folder = table_map[table_label]
+    meta = table_map[table_label]
+
+    parquet_path = meta["parquet_path"]
+    date_str = meta["date"]
+    folder = meta["folder"]
+    prefix = meta.get("prefix")
 
     st.markdown(f"#### Table: **{table_label}** — Latest: {date_str}")
 
-    if not parquet_path:
+    # For non-Socialstyrelsen sources we still expect a single parquet.
+    if source_key != "soc" and not parquet_path:
         st.error("No parquet file found.")
         return
+
 
     # -----------------------------------------------------
     # LOAD DATA
@@ -412,17 +449,35 @@ def render_source_page(source_key: str):
     if source_key == "soc":
         st.markdown("### 🗃️ Select År and Mått")
 
-        years = load_soc_years(parquet_path)
-        chosen_year = st.selectbox("Choose År", years)
+        # Map each year to its specific parquet path in Dropbox
+        year_to_path = get_soc_year_to_path(folder, prefix)
 
-        matts = load_soc_matt(parquet_path, chosen_year)
+        if not year_to_path:
+            st.error("No yearly parquet files found for Socialstyrelsen.")
+            return
+
+        years = sorted(year_to_path.keys())
+        latest_year = max(years)
+
+        # Latest year is default
+        chosen_year = st.selectbox(
+            "Choose År",
+            years,
+            index=years.index(latest_year),
+        )
+
+        year_parquet_path = year_to_path[chosen_year]
+
+        # Now that the user has selected a year, we load that year's parquet
+        matts = load_soc_matt(year_parquet_path, chosen_year)
         chosen_matt = st.selectbox("Choose Mått", matts)
 
-        df_full = load_soc_filtered(parquet_path, chosen_year, chosen_matt)
+        df_full = load_soc_filtered(year_parquet_path, chosen_year, chosen_matt)
 
         # Limit preview so browser never receives millions of rows
         MAX_PREVIEW = 200_000
         df_preview_base = df_full.head(MAX_PREVIEW)
+
 
     else:
         df_full = load_parquet_from_dropbox(parquet_path)
@@ -483,7 +538,7 @@ def render_source_page(source_key: str):
     # FINAL PREVIEW (only ONE preview section!)
     # -----------------------------------------------------
     st.markdown("### 📋 Data Preview")
-    st.dataframe(df_final, use_container_width=True)
+    st.dataframe(df_final, width='stretch')
     st.caption(f"Preview shape: {df_final.shape[0]} rows × {df_final.shape[1]} columns")
 
     # -----------------------------------------------------
