@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from io_dropbox import list_parquet_files, read_parquet
+APP_VERSION = "sweden-2025-11-29-v3"  # bump when you want to verify a new deploy
 
 
 # -----------------------------------------------------------------------------
@@ -367,10 +368,13 @@ def join_with_uploaded(df: pd.DataFrame):
 
 def render_folder_cards():
     st.markdown(
-        """
+        f"""
 <div class="main-title">
   <h1>💊 Sweden Drug Data Center</h1>
-  <p style="color:#9ca3af;">Utforska läkemedelsdata från tre statliga myndigheter.</p>
+  <p style="color:#9ca3af;">
+    Utforska läkemedelsdata från tre statliga myndigheter.<br>
+    <span style="font-size:0.8rem;color:#6b7280;">Version: {APP_VERSION}</span>
+  </p>
 </div>
 """,
         unsafe_allow_html=True,
