@@ -1,5 +1,3 @@
-# Sweden/src/app.py
-
 from __future__ import annotations
 
 import os
@@ -17,7 +15,7 @@ from io_dropbox import list_parquet_files, read_parquet
 # Page config & styling
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Nordic Pill Sweden Drug Data Center",
+    page_title="Nordic Pill Sweden Data Center",
     page_icon="💊",
     layout="wide",
 )
@@ -228,11 +226,14 @@ def get_latest_parquet_in_folder(folder: str, prefix: Optional[str]):
 
     return None, None
 
-@st.cache_data(show_spinner=False, ttl=24 * 60 * 60)
+
+@st.cache_data(show_spinner=False, ttl=0)
 def get_soc_year_to_path(folder: str, prefix: Optional[str]):
     """
-    For the Socialstyrelsen folder, return a mapping {year: dropbox_path}
-    based on filenames like 'lakemedel_2024-12-05_2020.parquet'.
+    Build a mapping {year: dropbox_path} for Socialstyrelsen data.
+
+    We read the År column from each parquet file and map each year
+    we find to the file that contains it.
     """
     paths = list_parquet_files(folder)
     year_to_path: Dict[int, str] = {}
@@ -242,13 +243,22 @@ def get_soc_year_to_path(folder: str, prefix: Optional[str]):
         if prefix and not fname.lower().startswith(prefix.lower()):
             continue
 
-        # Expect suffix ..._YYYY.parquet
-        m = re.search(r"_(\d{4})\.parquet$", fname)
-        if not m:
+        try:
+            df_years = read_parquet(p, columns=["År"])
+        except Exception:
+            # If a file is unreadable we just skip it
             continue
 
-        year = int(m.group(1))
-        year_to_path[year] = p
+        years_in_file = df_years["År"].dropna().unique()
+
+        for y in years_in_file:
+            try:
+                y_int = int(y)
+            except (TypeError, ValueError):
+                continue
+
+            # If the same year appears in multiple files, last one wins
+            year_to_path[y_int] = p
 
     return year_to_path
 
@@ -425,7 +435,6 @@ def render_source_page(source_key: str):
             "prefix": tbl.get("filename_prefix"),
         }
 
-
     selected_label = st.selectbox("Choose table", option_labels)
     table_label = selected_label.split(" (")[0]
     meta = table_map[table_label]
@@ -442,12 +451,16 @@ def render_source_page(source_key: str):
         st.error("No parquet file found.")
         return
 
-
     # -----------------------------------------------------
     # LOAD DATA
     # -----------------------------------------------------
     if source_key == "soc":
         st.markdown("### 🗃️ Select År and Mått")
+
+        # Button to force-refresh cache if new files/years were added
+        if st.button("🔄 Refresh Socialstyrelsen cache"):
+            st.cache_data.clear()
+            st.rerun()
 
         # Map each year to its specific parquet path in Dropbox
         year_to_path = get_soc_year_to_path(folder, prefix)
@@ -468,7 +481,7 @@ def render_source_page(source_key: str):
 
         year_parquet_path = year_to_path[chosen_year]
 
-        # Now that the user has selected a year, we load that year's parquet
+        # when user has selected a year, we load that year's parquet
         matts = load_soc_matt(year_parquet_path, chosen_year)
         chosen_matt = st.selectbox("Choose Mått", matts)
 
@@ -478,12 +491,13 @@ def render_source_page(source_key: str):
         MAX_PREVIEW = 200_000
         df_preview_base = df_full.head(MAX_PREVIEW)
 
-
     else:
         df_full = load_parquet_from_dropbox(parquet_path)
         df_preview_base = df_full  # no preview limit for smaller datasets
 
-    st.caption(f"Loaded (preview) {df_preview_base.shape[0]} rows × {df_preview_base.shape[1]} columns")
+    st.caption(
+        f"Loaded (preview) {df_preview_base.shape[0]} rows × {df_preview_base.shape[1]} columns"
+    )
 
     # -----------------------------------------------------
     # COLUMN SELECTION (SILENTLY CONTROLS AGGREGATION FOR SOC)
@@ -516,7 +530,7 @@ def render_source_page(source_key: str):
                 .rename(columns={"Värde": "Värde_sum"})
             )
 
-        # Apply preview to aggregated dataset
+        # preview to aggregated dataset
         MAX_PREVIEW = 200_000
         df_preview = df_full_agg.head(MAX_PREVIEW)
 
@@ -538,7 +552,7 @@ def render_source_page(source_key: str):
     # FINAL PREVIEW (only ONE preview section!)
     # -----------------------------------------------------
     st.markdown("### 📋 Data Preview")
-    st.dataframe(df_final, width='stretch')
+    st.dataframe(df_final, width="stretch")
     st.caption(f"Preview shape: {df_final.shape[0]} rows × {df_final.shape[1]} columns")
 
     # -----------------------------------------------------
