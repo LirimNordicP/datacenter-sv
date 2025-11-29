@@ -15,13 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show repo structure (debug once)
+        run: ls -R
+
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Create venv and install dependencies (Sweden app)
-        working-directory: SWEDEN        # ⬅️ run inside SWEDEN folder
+      - name: Create venv and install dependencies
         run: |
           python -m venv antenv
           source antenv/bin/activate
@@ -32,11 +34,10 @@ jobs:
         with:
           name: python-app
           path: |
-            SWEDEN/                       # ⬅️ upload the SWEDEN folder
-            !SWEDEN/antenv/
-            !SWEDEN/__pycache__/
-            !SWEDEN/.git/
-            !SWEDEN/.github/
+            .
+            !antenv/
+            !.git/
+            !.github/
 
   deploy:
     runs-on: ubuntu-latest
@@ -50,7 +51,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
-          path: .   # unpack into working dir: ./SWEDEN/...
+          path: .   # unpack into working dir
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -65,4 +66,4 @@ jobs:
         with:
           app-name: 'Nordic-Pill-Data-Center-Sweden'
           slot-name: 'Production'
-          package: SWEDEN   # ⬅️ deploy the SWEDEN folder
+          package: .   # deploy the repo root
