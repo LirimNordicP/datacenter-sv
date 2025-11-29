@@ -462,12 +462,24 @@ def render_source_page(source_key: str):
             st.cache_data.clear()
             st.rerun()
 
-        # Map each year to its specific parquet path in Dropbox
+        # Optional debug: see what the app actually sees in Dropbox
+        debug = st.checkbox("Show Socialstyrelsen debug info")
+
+        # 1) What parquet files does Dropbox report in this folder?
+        paths = list_parquet_files(folder)
+        if debug:
+            st.write("Parquet files in folder:", paths)
+
+        # 2) Map each year to its specific parquet path in Dropbox
         year_to_path = get_soc_year_to_path(folder, prefix)
+
+        if debug:
+            st.write("Year → path mapping:", year_to_path)
 
         if not year_to_path:
             st.error("No yearly parquet files found for Socialstyrelsen.")
             return
+
 
         years = sorted(year_to_path.keys())
         latest_year = max(years)
